@@ -1,0 +1,15 @@
+# build folder
+*/build/*
+
+# lock files
+*~
+
+# backups
+*.bkp
+*(copy)*
+
+# codelite
+*.project
+*.workspace
+.codelite/
+*.tags
