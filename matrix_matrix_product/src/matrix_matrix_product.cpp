@@ -176,44 +176,45 @@ HPX_REGISTER_COMPONENT(block_component_type, block_component);
 typedef block_component::get_data_action get_data_action;
 HPX_REGISTER_ACTION(get_data_action);
   
-std::vector<double> multiply(hpx::future<block_data> A_fut,hpx::future<block_data> x_fut,
-    boost::uint64_t block_rows,
-    boost::uint64_t block_columns, boost::uint64_t tile_size)
+std::vector<double> multiply(hpx::future<block_data> A_fut,hpx::future<block_data> B_fut,
+    boost::uint64_t block_rows, boost::uint64_t block_columns,
+    boost::uint64_t tile_size)
 {    
     const block_data A(A_fut.get());
-    const block_data x(x_fut.get());
+    const block_data B(B_fut.get());
     
-    std::vector<double> rhs(block_rows, 0);
+    std::vector<double> C(block_rows*block_columns, 0);
             
     if (tile_size < block_columns)
     {
-        //TODO: maybe += tilesize here too
         for (boost::uint64_t i = 0; i < block_rows; ++i)
         {
-            for (boost::uint64_t j = 0; j < block_columns; j += tile_size)
+            for (boost::uint64_t k = 0; k < block_columns; ++k)
             {
-                boost::uint64_t max_j = std::min(block_columns, j + tile_size);
-
-                for (boost::uint64_t jt = j; jt != max_j; ++jt)
-                {
-                   rhs[i] += A[jt * block_rows + i] * x[j];
-                }
+                for (boost::uint64_t j = 0; j < block_columns; ++j)
+                {      
+                    C[k * block_rows + i] +=
+                        A[j * block_rows + i] * B[k * block_rows + j];
+                }        
             }
-        }
+        }        
     }        
     else
-    {
-        for (boost::uint64_t i = 0; i < block_rows; ++i)
+    {   
+        for (boost::uint64_t k = 0; k < block_columns; ++k)
         {
-            for (boost::uint64_t j = 0; j < block_columns; ++j)
-            {      
-                rhs[i] += A[j * block_rows + i] * x[j];
+            for (boost::uint64_t i = 0; i < block_rows; ++i)
+            {            
+                for (boost::uint64_t j = 0; j < block_columns; ++j)
+                {      
+                    C[k * block_rows + i] +=
+                        A[j * block_rows + i] * B[k * block_rows + j];
+                }        
             }
-            
-        }
+        }        
     }
     
-    return rhs;
+    return C;
 }
   
 
@@ -222,25 +223,26 @@ int hpx_main(boost::program_options::variables_map& vm)
     hpx::id_type here = hpx::find_here();
     bool root = (here == hpx::find_root_locality());
 
-    boost::uint64_t num_localities = hpx::get_num_localities().get();
+    const boost::uint64_t num_localities = hpx::get_num_localities().get();
 
-    boost::uint64_t num_rows = vm["matrix_size"].as<boost::uint64_t>();
-    boost::uint64_t num_columns = vm["matrix_size"].as<boost::uint64_t>();
-    boost::uint64_t iterations = vm["iterations"].as<boost::uint64_t>();
-    boost::uint64_t num_blocks = vm["num_blocks"].as<boost::uint64_t>();
+    const boost::uint64_t num_rows = vm["matrix_size"].as<boost::uint64_t>();
+    const boost::uint64_t num_columns = vm["matrix_size"].as<boost::uint64_t>();
+    const boost::uint64_t iterations = vm["iterations"].as<boost::uint64_t>();
+    const boost::uint64_t num_blocks = vm["num_blocks"].as<boost::uint64_t>();
     boost::uint64_t tile_size = num_columns;
     
-    boost::uint64_t block_rows = num_rows / num_localities / num_blocks;
-    boost::uint64_t block_columns = num_columns / num_localities / num_blocks;
-    boost::uint64_t block_size = block_rows * num_columns;    
+    const boost::uint64_t block_rows = num_rows / num_localities / num_blocks;
+    const boost::uint64_t block_columns = num_columns / num_localities / num_blocks;
+    const boost::uint64_t block_size = block_rows * num_columns;
+    const boost::uint64_t order = block_columns * block_rows; 
     
-    boost::uint64_t num_total_blocks = num_blocks * num_localities;
+    const boost::uint64_t num_total_blocks = num_blocks * num_localities;
     
-    double low = vm["low"].as<double>();
-    double high = vm["high"].as<double>();
+    const double low = vm["low"].as<double>();
+    const double high = vm["high"].as<double>();
     
     boost::uint64_t bytes =
-        static_cast<boost::uint64_t>(sizeof(double) * (num_rows * num_columns + 2 * num_rows));
+        static_cast<boost::uint64_t>(sizeof(double) * (3 * num_rows * num_columns));
     
     if(vm.count("tile_size"))
         tile_size = vm["tile_size"].as<boost::uint64_t>();
@@ -250,7 +252,7 @@ int hpx_main(boost::program_options::variables_map& vm)
     if(root)
     {
         std::cout
-            << "Matrix vector product: A*x = b with random A and x\n"
+            << "Matrix matrix product: A*B = C with random A and B\n"
             << "Matrix dimensions:\t\t" << num_rows << "x" << num_columns << "\n"
             << "Number of blocks:\t\t" << num_blocks << "\n"
             << "Local block dimension:\t\t"     << block_rows << "x"
@@ -266,7 +268,193 @@ int hpx_main(boost::program_options::variables_map& vm)
     }
     
     boost::uint64_t id = hpx::get_locality_id();
+    
+    std::vector<block> A(num_total_blocks);
+    std::vector<block> B(num_total_blocks);
+    std::vector<block> C(num_total_blocks);
+    
+    boost::uint64_t local_blocks_begin = id * num_blocks;
+    boost::uint64_t local_blocks_end = (id + 1) * num_blocks;
+    
+    for (boost::uint64_t b = 0; b != num_blocks; ++b)
+    {
+        boost::uint64_t block_index = b + local_blocks_begin;
+        
+        A[block_index] = block(block_index, block_size, A_block_basename);
+        B[block_index] = block(block_index, block_size, B_block_basename);
+        C[block_index] = block(block_index, block_size, C_block_basename);
+    }
+    
+    std::vector<hpx::future<hpx::id_type> > A_ids =
+        hpx::find_all_from_basename(A_block_basename, num_total_blocks);
+        
+    std::vector<hpx::future<hpx::id_type> > B_ids =
+        hpx::find_all_from_basename(B_block_basename, num_total_blocks);
+        
+    std::vector<hpx::future<hpx::id_type> > C_ids =
+        hpx::find_all_from_basename(C_block_basename, num_total_blocks);
+        
+    auto range = boost::irange(local_blocks_begin, local_blocks_end);
+    
+    hpx::parallel::for_each(
+        hpx::parallel::par, boost::begin(range), boost::end(range),
+        [&](boost::uint64_t b)
+        {                
+            hpx::register_with_basename(A_block_basename, A[b].get_id(), b);
+            hpx::register_with_basename(B_block_basename, B[b].get_id(), b);
+            hpx::register_with_basename(C_block_basename, C[b].get_id(), b);
+        }
+    );
+    
+    hpx::wait_all(A_ids);
+    hpx::wait_all(B_ids);
+    hpx::wait_all(C_ids);
+    
+    for (boost::uint64_t b = 0; b != num_total_blocks; ++b)
+    {
+        if (b < local_blocks_begin || b >= local_blocks_end)
+        {
+            A[b] = block(std::move(A_ids[b]));
+            B[b] = block(std::move(B_ids[b]));
+            C[b] = block(std::move(C_ids[b]));
+        }
+    }
+    
+    double avgtime = 0.0;
+    double maxtime = 0.0;
+    double mintime = 366.0 * 24.0 * 3600.0;
+    
+    for (boost::uint64_t iter = 0; iter != iterations; ++iter)
+    {   
+         hpx::parallel::for_each(
+            hpx::parallel::par, boost::begin(range), boost::end(range),
+            [&](boost::uint64_t b)
+            {
+                    rand_double rd(low, high);
+                
+                    std::shared_ptr<block_component> A_ptr =
+                        hpx::get_ptr<block_component>(A[b].get_id()).get();
+                        
+                    std::shared_ptr<block_component> B_ptr =
+                        hpx::get_ptr<block_component>(B[b].get_id()).get();
+                        
+                    std::shared_ptr<block_component> C_ptr =
+                        hpx::get_ptr<block_component>(C[b].get_id()).get();
+                        
+                    for (boost::uint64_t j = 0; j != num_columns; ++j)
+                    {
+                        for (boost::uint64_t i = 0; i != block_rows; ++i)
+                        {
+                            A_ptr->data_[j * block_rows + i] = rd();
+                            B_ptr->data_[j * block_rows + i] = rd();
+                            C_ptr->data_[j * block_rows + i] = 0;
+                        }                        
+                    }          
+            }
+        );
+        
+        hpx::util::high_resolution_timer t;
+               
+        hpx::parallel::for_each(
+            hpx::parallel::par, boost::begin(range), boost::end(range),
+            [&](boost::uint64_t b)
+            {
+                 auto phase_range =
+                        boost::irange(static_cast<boost::uint64_t>(0), num_total_blocks);
+                        
+                for (boost::uint64_t lane : phase_range)
+                {   
+                    std::vector<hpx::future<std::vector<double> > > phase_futures;
+
+
+                    const boost::uint64_t B_offset = lane * order;                    
             
+                    for (boost::uint64_t phase : phase_range)
+                    {                    
+                        const boost::uint64_t A_offset = phase * order;
+                        
+                        phase_futures.push_back(
+                           hpx::dataflow(    
+                                &multiply,
+                                A[b].get_data(A_offset, order),
+                                B[phase].get_data(B_offset, order),
+                                block_rows,
+                                block_columns,
+                                tile_size
+                            )
+                        );          
+                    }
+                    
+                    std::shared_ptr<block_component> C_ptr =
+                        hpx::get_ptr<block_component>(C[b].get_id()).get();
+                
+                    hpx::lcos::local::spinlock mtx;
+                    hpx::wait_each(
+                        hpx::util::unwrapped(
+                            [&](std::vector<double> r)
+                            {
+                                std::lock_guard<hpx::lcos::local::spinlock> lk(mtx);
+
+                                for (boost::uint64_t i = 0; i != r.size(); ++i) 
+                                    C_ptr->data_[B_offset + i] += r[i];
+                            }
+                        ),
+                        phase_futures
+                    );                
+                }                      
+            }            
+        );
+                
+        double elapsed = t.elapsed();
+        
+        if (verbose)
+            std::cout
+                << "Iteration " << iter << " took " << elapsed << "(s)"
+                << std::endl;
+        
+        if (iter > 0 || iterations == 1)
+        {
+            avgtime = avgtime + elapsed;
+            maxtime = std::max(maxtime, elapsed);
+            mintime = std::min(mintime, elapsed);
+        }    
+    }
+    
+    if (root)
+    {
+        avgtime = avgtime/static_cast<double>(
+                    (std::max)(iterations-1, static_cast<boost::uint64_t>(1)));
+                    
+        std::cout
+            << "Rate (MB/s):\t" << 1.e-6 * bytes/mintime << "\n"
+            << "Avg time (s):\t" << avgtime << "\n"
+            << "Min time (s):\t" << mintime << "\n"
+            << "Max time (s):\t" << maxtime << "\n"
+            << std::endl;
+    } 
+    
+
+    if (verbose)
+    {
+        for (boost::uint64_t b = local_blocks_begin; b != local_blocks_end; ++b)
+        {        
+            std::cout << "next block " << b << "\n";        
+                    std::shared_ptr<block_component> C_ptr =
+                        hpx::get_ptr<block_component>(C[b].get_id()).get();
+                    
+            
+            for (boost::uint64_t i = 0; i != block_rows; ++i)
+            {
+                for (boost::uint64_t j = 0; j != num_columns; ++j)
+                {
+                    std::cout << C_ptr->data_[j * block_rows + i] << " ";
+                }
+                
+                std::cout << "\n";
+            }
+        }            
+        std::cout << std::endl;
+    }
     
     return hpx::finalize();
 }
