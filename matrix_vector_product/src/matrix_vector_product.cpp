@@ -205,13 +205,13 @@ std::vector<double> multiply(
     }        
     else
     {
-        for (boost::uint64_t i = 0; i < block_rows; ++i)
-        {
-            for (boost::uint64_t j = 0; j < block_columns; ++j)
-            {      
+        for (boost::uint64_t j = 0; j < block_columns; ++j)
+        {  
+            for (boost::uint64_t i = 0; i < block_rows; ++i)
+            {
+                
                 rhs[i] += A[j * block_rows + i] * x[j];
-            }
-            
+            }            
         }
     }
     
@@ -221,27 +221,29 @@ std::vector<double> multiply(
 
 int hpx_main(boost::program_options::variables_map& vm)
 {
-    hpx::id_type here = hpx::find_here();
-    bool root = (here == hpx::find_root_locality());
+    const hpx::id_type here = hpx::find_here();
+    const bool root = (here == hpx::find_root_locality());
 
-    boost::uint64_t num_localities = hpx::get_num_localities().get();
+    const boost::uint64_t num_localities = hpx::get_num_localities().get();
 
-    boost::uint64_t num_rows = vm["matrix_size"].as<boost::uint64_t>();
-    boost::uint64_t num_columns = vm["matrix_size"].as<boost::uint64_t>();
-    boost::uint64_t iterations = vm["iterations"].as<boost::uint64_t>();
-    boost::uint64_t num_blocks = vm["num_blocks"].as<boost::uint64_t>();
+    const boost::uint64_t num_rows = vm["matrix_size"].as<boost::uint64_t>();
+    const boost::uint64_t num_columns = vm["matrix_size"].as<boost::uint64_t>();
+    const boost::uint64_t iterations = vm["iterations"].as<boost::uint64_t>();
+    const boost::uint64_t num_blocks = vm["num_blocks"].as<boost::uint64_t>();
     boost::uint64_t tile_size = num_columns;
     
-    boost::uint64_t block_rows = num_rows / num_localities / num_blocks;
-    boost::uint64_t block_columns = num_columns / num_localities / num_blocks;
-    boost::uint64_t block_size = block_rows * num_columns;    
+    const boost::uint64_t block_rows = num_rows / num_localities / num_blocks;
+    const boost::uint64_t block_columns = num_columns / num_localities / num_blocks;
+    const boost::uint64_t block_size = block_rows * num_columns;     
+    const boost::uint64_t order = block_columns * block_rows;
+
     
-    boost::uint64_t num_total_blocks = num_blocks * num_localities;
+    const boost::uint64_t num_total_blocks = num_blocks * num_localities;
     
-    double low = vm["low"].as<double>();
-    double high = vm["high"].as<double>();
+    const double low = vm["low"].as<double>();
+    const double high = vm["high"].as<double>();
     
-    boost::uint64_t bytes =
+    const boost::uint64_t bytes =
         static_cast<boost::uint64_t>(sizeof(double) 
                                     * (num_rows * num_columns + 2 * num_rows));
     
@@ -321,10 +323,9 @@ int hpx_main(boost::program_options::variables_map& vm)
         }
     }
     
-    double errsq = 0.0;
     double avgtime = 0.0;
     double maxtime = 0.0;
-    double mintime = 366.0 * 24.0*3600.0;
+    double mintime = 366.0 * 24.0 * 3600.0;
     
     for (boost::uint64_t iter = 0; iter != iterations; ++iter)
     {   
@@ -374,7 +375,6 @@ int hpx_main(boost::program_options::variables_map& vm)
                                          
                 for (boost::uint64_t phase : phase_range)
                 {
-                    const boost::uint64_t order = block_columns * block_rows;
                     const boost::uint64_t A_offset = phase * order;
                     phase_futures.push_back(
                        hpx::dataflow(    
@@ -408,6 +408,11 @@ int hpx_main(boost::program_options::variables_map& vm)
         );
                 
         double elapsed = t.elapsed();
+        
+        if (verbose)
+            std::cout
+                << "Iteration " << iter << " took " << elapsed << "(s)"
+                << std::endl;
         
         if (iter > 0 || iterations == 1)
         {
