@@ -435,7 +435,6 @@ int hpx_main(boost::program_options::variables_map& vm)
             << std::endl;
     } 
     
-
     if (verbose)
     {
         for (boost::uint64_t b = local_blocks_begin; b != local_blocks_end; ++b)

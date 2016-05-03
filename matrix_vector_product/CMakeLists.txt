@@ -12,8 +12,9 @@ project(matrix_vector_product CXX)
 
 find_package(HPX)
 
-
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/)
+
+add_compile_options(-std=c++14)
 
 # --------------- MAIN --------------- #
 add_hpx_executable(
