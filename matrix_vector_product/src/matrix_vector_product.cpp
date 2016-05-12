@@ -140,7 +140,7 @@ struct block_component
     
     block_data get_data(boost::uint64_t offset, boost::uint64_t size)
     {
-        return block_data(&data_[offset], size);;
+        return block_data(&data_[offset], size);
     }
     
     HPX_DEFINE_COMPONENT_DIRECT_ACTION(block_component, get_data);    
