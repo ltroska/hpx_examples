@@ -329,12 +329,12 @@ int hpx_main(boost::program_options::variables_map& vm)
     
     for (boost::uint64_t iter = 0; iter != iterations; ++iter)
     {   
+         rand_double rd(low, high);
+
          hpx::parallel::for_each(
             hpx::parallel::par, boost::begin(range), boost::end(range),
             [&](boost::uint64_t b)
-            {
-                    rand_double rd(low, high);
-                
+            {                
                     std::shared_ptr<block_component> A_ptr =
                         hpx::get_ptr<block_component>(A[b].get_id()).get();
                         
@@ -439,28 +439,45 @@ int hpx_main(boost::program_options::variables_map& vm)
     {
         for (boost::uint64_t b = local_blocks_begin; b != local_blocks_end; ++b)
         {        
-            std::cout << "next block " << b << "\n";        
+            std::cout << "Checking block " << b << ": ";        
                     std::shared_ptr<block_component> A_ptr =
                         hpx::get_ptr<block_component>(A[b].get_id()).get();
-                        
-            std::shared_ptr<block_component> x_ptr =
-                hpx::get_ptr<block_component>(x[b].get_id()).get();
-                        
+                                                
             std::shared_ptr<block_component> rhs_ptr =
                 hpx::get_ptr<block_component>(rhs[b].get_id()).get();
             
-            for (boost::uint64_t i = 0; i != block_rows; ++i)
+	
+			bool correct = true; 
+
+	 		for (boost::uint64_t i = 0; i != block_rows; ++i)
             {
+				double res = 0;
+				boost::uint64_t phase = 0;
+				
+				block_data x_data = x[phase].get_data(phase, block_rows).get();
+
                 for (boost::uint64_t j = 0; j != num_columns; ++j)
                 {
-                    std::cout << A_ptr->data_[j * block_rows + i] << " ";
+					if (j != 0 && j % block_rows == 0)
+						x_data = x[phase].get_data(++phase, block_rows).get();
+
+                    res += A_ptr->data_[j * block_rows + i] * x_data[j];
                 }
-                
-                std::cout
-                    << "\t" << x_ptr->data_[i]
-                    << "\t=\t" << rhs_ptr->data_[i]
-                    << "\n";           
-            }
+
+				if (std::abs(res - rhs_ptr->data_[i]) > 1e-9)
+{
+				std::cout << res << " " << rhs_ptr->data_[i] << std::endl;
+					correct = false;
+}
+			}
+
+			std::cout << "The locally computed data is ";
+			if (correct)
+				std::cout << "correct.";
+			else
+				std::cout << "wrong.";
+			std::cout << std::endl;
+
         }
             
         std::cout << std::endl;
