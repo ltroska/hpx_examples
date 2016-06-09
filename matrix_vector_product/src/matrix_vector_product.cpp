@@ -327,35 +327,50 @@ int hpx_main(boost::program_options::variables_map& vm)
     double maxtime = 0.0;
     double mintime = 366.0 * 24.0 * 3600.0;
     
+     rand_double rd(low, high);
+
+     hpx::parallel::for_each(
+        hpx::parallel::par, boost::begin(range), boost::end(range),
+        [&](boost::uint64_t b)
+        {                
+                std::shared_ptr<block_component> A_ptr =
+                    hpx::get_ptr<block_component>(A[b].get_id()).get();
+                    
+                std::shared_ptr<block_component> x_ptr =
+                    hpx::get_ptr<block_component>(x[b].get_id()).get();
+                    
+                std::shared_ptr<block_component> rhs_ptr =
+                    hpx::get_ptr<block_component>(rhs[b].get_id()).get();
+                    
+                for (boost::uint64_t j = 0; j != num_columns; ++j)
+                {
+                    for (boost::uint64_t i = 0; i != block_rows; ++i)
+                    {
+                        A_ptr->data_[j * block_rows + i] = rd();
+                    }
+                    
+                }
+                
+                for (boost::uint64_t i = 0; i != block_rows; ++i)
+                {
+                    x_ptr->data_[i] = rd();
+                    rhs_ptr->data_[i] = 0;
+                }
+        }
+    );
+    
     for (boost::uint64_t iter = 0; iter != iterations; ++iter)
     {   
-         rand_double rd(low, high);
-
          hpx::parallel::for_each(
             hpx::parallel::par, boost::begin(range), boost::end(range),
             [&](boost::uint64_t b)
             {                
-                    std::shared_ptr<block_component> A_ptr =
-                        hpx::get_ptr<block_component>(A[b].get_id()).get();
-                        
-                    std::shared_ptr<block_component> x_ptr =
-                        hpx::get_ptr<block_component>(x[b].get_id()).get();
-                        
                     std::shared_ptr<block_component> rhs_ptr =
                         hpx::get_ptr<block_component>(rhs[b].get_id()).get();
-                        
-                    for (boost::uint64_t j = 0; j != num_columns; ++j)
-                    {
-                        for (boost::uint64_t i = 0; i != block_rows; ++i)
-                        {
-                            A_ptr->data_[j * block_rows + i] = rd();
-                        }
-                        
-                    }
+
                     
                     for (boost::uint64_t i = 0; i != block_rows; ++i)
                     {
-                        x_ptr->data_[i] = rd();
                         rhs_ptr->data_[i] = 0;
                     }
             }
