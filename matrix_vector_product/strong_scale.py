@@ -4,10 +4,8 @@ import re
 matrix_size = 8192
 iterations = 10
 max_processors = 4
-init_points_per_block = 1
-step = 2
-
-outfile_path = 'matrix_vector_data_s' + str(matrix_size) + '_p' + str(max_processors) + '.dat'
+init_points_per_block = 2048
+outfile_path = 'matrix_vector_data_s' + str(matrix_size) + '_p' + str(max_processors) + '_strong.dat'
 
 def get_avg_time(output):
 	pattern = 'Avg time \(s\):\t(.*?)\n'
@@ -31,7 +29,6 @@ with open(outfile_path, 'wb') as outfile:
 	outfile.write('size ' + str(matrix_size) + '\n')
 	outfile.write('iterations ' + str(iterations) + '\n')
 	outfile.write('init_points_per_block ' + str(init_points_per_block) + '\n')
-	outfile.write('step ' + str(step) + '\n')
 
 	outfile.write('#processors ')
 	for p in range(1, max_processors + 1):
@@ -40,25 +37,14 @@ with open(outfile_path, 'wb') as outfile:
 	outfile.write('\n')
 	outfile.write('avg_time rate idle_rate\n')
 
-	while points_per_block <= matrix_size:
-		num_blocks = matrix_size/points_per_block
+	num_blocks = matrix_size/points_per_block
 
-		row = []
+	for p in range(1, max_processors + 1):
+		cmd = './build/matrix_vector_product --num_blocks ' + str(num_blocks) + ' --matrix_size ' + str(matrix_size) + ' -t' + str(p) + ' --iterations ' + str(iterations) + ' --hpx:print-counter=/threads{locality#*/total}/idle-rate'
 
-		for p in range(1, max_processors + 1):
-			cmd = './build/matrix_vector_product --num_blocks ' + str(num_blocks) + ' --matrix_size ' + str(matrix_size) + ' -t' + str(p) + ' --iterations ' + str(iterations) + ' --hpx:print-counter=/threads{locality#*/total}/idle-rate'
+		output = subprocess.check_output(cmd, shell=True)
+			
+		outfile.write(str(p) + ' ' + get_avg_time(output) + ' ' + get_rate(output) + ' ' + get_idle_rate(output) + '\n')	
+	
 
-			output = subprocess.check_output(cmd, shell=True)
 
-			row.append(get_avg_time(output))
-			row.append(get_rate(output))
-			row.append(get_idle_rate(output))		
-		
-		outfile.write(str(points_per_block) + ' ')
-		for value in row:
-			outfile.write(str(value) + ' ')
-		outfile.write('\n')
-
-		points_per_block *= step
-
-		print row
