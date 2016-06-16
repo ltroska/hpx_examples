@@ -184,7 +184,7 @@ std::vector<double> multiply(
     boost::uint64_t block_rows,
     boost::uint64_t block_columns, boost::uint64_t tile_size)
 {    
-    hpx::util::high_resolution_timer t;
+   //hpx::util::high_resolution_timer t;
     
     const block_data A(A_fut.get());
     const block_data x(x_fut.get());
@@ -199,7 +199,7 @@ std::vector<double> multiply(
         }            
     }
     
-    std::cout << t.elapsed() << std::endl;
+    //std::cout << t.elapsed() << std::endl;
     return rhs;
 }
   
@@ -211,8 +211,8 @@ int hpx_main(boost::program_options::variables_map& vm)
 
     const boost::uint64_t num_localities = hpx::get_num_localities().get();
 
-    const boost::uint64_t num_rows = vm["matrix_size"].as<boost::uint64_t>();
-    const boost::uint64_t num_columns = vm["matrix_size"].as<boost::uint64_t>();
+	const boost::uint64_t num_rows = vm["rows"].as<boost::uint64_t>();
+	const boost::uint64_t num_columns = vm["columns"].as<boost::uint64_t>();
     const boost::uint64_t iterations = vm["iterations"].as<boost::uint64_t>();
     const boost::uint64_t num_blocks = vm["num_blocks"].as<boost::uint64_t>();
     boost::uint64_t tile_size = num_columns;
@@ -495,6 +495,10 @@ int main(int argc, char* argv[])
     desc_commandline.add_options()
         ("matrix_size", value<boost::uint64_t>()->default_value(1024),
          "Number of matrix rows/column")
+        ("rows", value<boost::uint64_t>()->default_value(1024),
+		 "Number of matrix rows")
+		("columns", value<boost::uint64_t>()->default_value(1024),
+		 "Number of matrix columns")
         ("iterations", value<boost::uint64_t>()->default_value(10),
          "Number of iterations to run for")
         ("num_blocks", value<boost::uint64_t>()->default_value(1),
