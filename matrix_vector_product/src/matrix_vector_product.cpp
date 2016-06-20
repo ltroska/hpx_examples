@@ -179,8 +179,9 @@ HPX_REGISTER_COMPONENT(block_component_type, block_component);
 typedef block_component::get_data_action get_data_action;
 HPX_REGISTER_ACTION(get_data_action);
   
-std::vector<double> multiply(
+void multiply(
     hpx::future<block_data> A_fut,hpx::future<block_data> x_fut,
+    hpx::future<block_data> rhs_fut,
     boost::uint64_t block_rows,
     boost::uint64_t block_columns, boost::uint64_t tile_size)
 {    
@@ -188,9 +189,8 @@ std::vector<double> multiply(
     
     const block_data A(A_fut.get());
     const block_data x(x_fut.get());
-    
-    std::vector<double> rhs(block_rows, 0);
-            
+    block_data rhs(rhs_fut.get());
+                
     for (boost::uint64_t i = 0; i < block_rows; ++i)
     {
         for (boost::uint64_t j = 0; j < block_columns; ++j)
@@ -200,7 +200,6 @@ std::vector<double> multiply(
     }
     
     //std::cout << t.elapsed() << std::endl;
-    return rhs;
 }
   
 
@@ -387,25 +386,15 @@ int hpx_main(boost::program_options::variables_map& vm)
         hpx::parallel::for_each(
             hpx::parallel::par, boost::begin(range), boost::end(range),
             [&](boost::uint64_t b)
-            {
-                std::shared_ptr<block_component> rhs_ptr =
-                        hpx::get_ptr<block_component>(rhs[b].get_id()).get();
-                
-            
-               hpx::dataflow(    
+            {              
+				hpx::dataflow(    
                     &multiply,
                     A[b].get_data(0, block_size),
                     x.get_data(0, num_columns),
+                    rhs[b].get_data(0, block_size),
                     block_rows,
                     block_columns,
                     tile_size
-                ).then(
-                    hpx::util::unwrapped(
-                        [&](std::vector<double> r)
-                        {
-                            std::copy(r.begin(), r.end(), rhs_ptr->data_.begin());
-                        }
-                    )
                 ).wait();                                                
             }            
         );
